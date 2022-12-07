@@ -1,0 +1,34 @@
+{
+  "players" : [
+    {
+      "name": "Player1",
+      "email": "player1@example.com"
+    },
+    {
+      "name": "Player2",
+      "email": "player2@example.com"
+    },
+    {
+      "name": "Player3",
+      "email": "player3@example.com"
+    },
+    {
+      "name": "Player4",
+      "email": "player4@example.com"
+    },
+    {
+      "name": "Player5",
+      "email": "player5@example.com"
+    }
+  ],
+  "incompatibilities" : [
+    {
+      "fst": "Player1",
+      "snd": "Player2"
+    },
+    {
+      "fst": "Player3",
+      "snd": "Player4"
+    }
+  ]
+}
