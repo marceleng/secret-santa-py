@@ -74,11 +74,11 @@ class TestNGiftGraph(unittest.TestCase):
         - Each player receives exactly 2 gifts.
         - No self-assignments.
         """
-        p1 = Player("A", "a@example.com")
-        p2 = Player("B", "b@example.com")
-        p3 = Player("C", "c@example.com")
-        p4 = Player("D", "d@example.com")
-        players = {p1, p2, p3, p4}
+        pa = Player("A", "a@example.com")
+        pb = Player("B", "b@example.com")
+        pc = Player("C", "c@example.com")
+        pd = Player("D", "d@example.com")
+        players = {pa, pb, pc, pd}
         incompatibilities = set()
 
         graph = NGiftGraph(players, incompatibilities, number_of_gifts=2)
@@ -104,20 +104,20 @@ class TestNGiftGraph(unittest.TestCase):
         - All incompatibilities are respected.
         - All counts are correct.
         """
-        p1 = Player("A", "a@example.com")
-        p2 = Player("B", "b@example.com")
-        p3 = Player("C", "c@example.com")
-        p4 = Player("D", "d@example.com")
-        p5 = Player("E", "e@example.com")
-        players = {p1, p2, p3, p4, p5}
+        pa = Player("A", "a@example.com")
+        pb = Player("B", "b@example.com")
+        pc = Player("C", "c@example.com")
+        pd = Player("D", "d@example.com")
+        pe = Player("E", "e@example.com")
+        players = {pa, pb, pc, pd, pe}
         
         # A cannot gift B
         # B cannot gift C
         # C cannot gift D
         incompatibilities = {
-            Incompatibility(p1, p2),
-            Incompatibility(p2, p3),
-            Incompatibility(p3, p4)
+            Incompatibility(pa, pb),
+            Incompatibility(pb, pc),
+            Incompatibility(pc, pd)
         }
 
         graph = NGiftGraph(players, incompatibilities, number_of_gifts=1)
@@ -125,23 +125,22 @@ class TestNGiftGraph(unittest.TestCase):
         graph.verify_assignments()
         
         # Verify incompatibilities
-        if p1 in graph.assignments:
-            self.assertNotIn(p2, graph.assignments[p1])
-        if p2 in graph.assignments:
-            self.assertNotIn(p3, graph.assignments[p2])
-        if p3 in graph.assignments:
-            self.assertNotIn(p4, graph.assignments[p3])
+        if pa in graph.assignments:
+            self.assertNotIn(pb, graph.assignments[pa])
+        if pb in graph.assignments:
+            self.assertNotIn(pc, graph.assignments[pb])
+        if pc in graph.assignments:
+            self.assertNotIn(pd, graph.assignments[pc])
 
     def test_max_retries_exceeded_raises_exception(self):
         """
         Test that an exception is raised when a valid flow cannot be found
         within the maximum number of retries.
         """
-        players = {
-            Player("A", "a@example.com"),
-            Player("B", "b@example.com"),
-            Player("C", "c@example.com")
-        }
+        pa = Player("A", "a@example.com")
+        pb = Player("B", "b@example.com")
+        pc = Player("C", "c@example.com")
+        players = {pa, pb, pc}
         incompatibilities = set()
         
         with patch('secret_santa.secret_santa.gift_graph.NGiftGraph._build_flow_graph') as mock_build:
@@ -164,7 +163,7 @@ class TestNGiftGraph(unittest.TestCase):
             mock_flow_graph.compute_largest_flow.return_value = mock_flow
             
             with self.assertRaises(Exception) as cm:
-                NGiftGraph(players, incompatibilities, allow_2cycles=False, max_retries=3)
+                NGiftGraph(players, incompatibilities, allow_2cycles=False, max_attempts=3)
             
             self.assertIn("Could not find a valid solution after 3 attempts", str(cm.exception))
             self.assertEqual(mock_build.call_count, 3)
@@ -215,7 +214,7 @@ class TestNGiftGraph(unittest.TestCase):
             
             mock_build.side_effect = [mock_flow_graph_bad, mock_flow_graph_bad, mock_flow_graph_good]
             
-            graph = NGiftGraph(players, incompatibilities, allow_2cycles=False, max_retries=5)
+            graph = NGiftGraph(players, incompatibilities, allow_2cycles=False, max_attempts=5)
             
             self.assertEqual(mock_build.call_count, 3)
             self.assertIn(p_b, graph.assignments[p_a])
