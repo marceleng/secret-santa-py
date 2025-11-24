@@ -57,6 +57,7 @@ class NGiftGraph:
                             self.assignments[src.player].add(dst.player)
                             if not self.allow_2cycles and src.player in self.assignments[dst.player]:
                                 is_correct_flow = False
+                                break
         
         if not is_correct_flow:
             raise GiftAssignmentError(f"Could not find a valid solution after {self.max_attempts} attempts")
