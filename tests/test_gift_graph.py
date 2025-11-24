@@ -192,10 +192,14 @@ class TestNGiftGraph(unittest.TestCase):
             p_a = players_list[0]
             p_b = players_list[1]
             
-            mock_src_a = MagicMock(); mock_src_a.player = p_a
-            mock_dst_b = MagicMock(); mock_dst_b.player = p_b
-            mock_src_b = MagicMock(); mock_src_b.player = p_b
-            mock_dst_a = MagicMock(); mock_dst_a.player = p_a
+            mock_src_a = MagicMock()
+            mock_src_a.player = p_a
+            mock_dst_b = MagicMock()
+            mock_dst_b.player = p_b
+            mock_src_b = MagicMock()
+            mock_src_b.player = p_b
+            mock_dst_a = MagicMock()
+            mock_dst_a.player = p_a
             
             mock_flow_bad.graph = {
                 mock_src_a: {mock_dst_b: 1},
@@ -206,8 +210,10 @@ class TestNGiftGraph(unittest.TestCase):
             mock_flow_graph_good = MagicMock()
             mock_flow_good = MagicMock()
             p_c = players_list[2]
-            mock_src_c = MagicMock(); mock_src_c.player = p_c
-            mock_dst_c = MagicMock(); mock_dst_c.player = p_c
+            mock_src_c = MagicMock()
+            mock_src_c.player = p_c
+            mock_dst_c = MagicMock()
+            mock_dst_c.player = p_c
             
             mock_flow_good.graph = {
                 mock_src_a: {mock_dst_b: 1},
