@@ -12,6 +12,11 @@ from secret_santa.flow_graph.flow_graph import FlowGraph, FlowEdge
 _Edge = Tuple[Player, Player]
 
 
+class GiftAssignmentError(Exception):
+    """Raised when a valid gift assignment cannot be found."""
+    pass
+
+
 class _PlayerDirection(Enum):
     GIFTER = 0
     GIFTEE = 1
@@ -32,12 +37,15 @@ class NGiftGraph:
     incompatibilities: set[Incompatibility]
     number_of_gifts: int = field(default=1)
     allow_2cycles: bool = field(default=True)
+    max_attempts: int = field(default=3)
     assignments: defaultdict[Player, set[Player]] = field(init=False)
     flow_graph: FlowGraph = field(init=False)
 
     def __post_init__(self):
         is_correct_flow = False
-        while not is_correct_flow:
+        attempts = 0
+        while not is_correct_flow and attempts < self.max_attempts:
+            attempts += 1
             self.assignments = defaultdict(set)
             flow_graph = self._build_flow_graph()
             flow = flow_graph.compute_largest_flow()
@@ -49,6 +57,9 @@ class NGiftGraph:
                             self.assignments[src.player].add(dst.player)
                             if not self.allow_2cycles and src.player in self.assignments[dst.player]:
                                 is_correct_flow = False
+        
+        if not is_correct_flow:
+            raise GiftAssignmentError(f"Could not find a valid solution after {self.max_attempts} attempts")
 
     def _build_flow_graph(self) -> FlowGraph:
         graph_source = "src"
