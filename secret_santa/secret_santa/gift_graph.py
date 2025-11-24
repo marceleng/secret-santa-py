@@ -7,7 +7,7 @@ from typing import Tuple
 from random import randbytes, shuffle
 from .player import Player
 from .incompatibility import Incompatibility
-from secret_santa.flow_graph.flow_graph import FlowGraph, FlowEdge
+from secret_santa.flow_graph.flow_graph import Flow, FlowGraph, FlowEdge
 
 _Edge = Tuple[Player, Player]
 
@@ -54,7 +54,7 @@ class NGiftGraph:
         if not is_correct_flow:
             raise GiftAssignmentError(f"Could not find a valid solution after {self.max_attempts} attempts")
 
-    def _extract_assignments_from_flow(self, flow) -> bool:
+    def _extract_assignments_from_flow(self, flow: Flow) -> bool:
         for src in flow.graph:
             if src == "src":
                 continue
@@ -66,8 +66,6 @@ class NGiftGraph:
                 if not self.allow_2cycles and src.player in self.assignments[dst.player]:
                     return False
         return True
-        
-
 
     def _build_flow_graph(self) -> FlowGraph:
         graph_source = "src"
