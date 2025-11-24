@@ -32,12 +32,15 @@ class NGiftGraph:
     incompatibilities: set[Incompatibility]
     number_of_gifts: int = field(default=1)
     allow_2cycles: bool = field(default=True)
+    max_retries: int = field(default=3)
     assignments: defaultdict[Player, set[Player]] = field(init=False)
     flow_graph: FlowGraph = field(init=False)
 
     def __post_init__(self):
         is_correct_flow = False
-        while not is_correct_flow:
+        attempts = 0
+        while not is_correct_flow and attempts < self.max_retries:
+            attempts += 1
             self.assignments = defaultdict(set)
             flow_graph = self._build_flow_graph()
             flow = flow_graph.compute_largest_flow()
@@ -49,6 +52,9 @@ class NGiftGraph:
                             self.assignments[src.player].add(dst.player)
                             if not self.allow_2cycles and src.player in self.assignments[dst.player]:
                                 is_correct_flow = False
+        
+        if not is_correct_flow:
+            raise Exception(f"Could not find a valid solution after {self.max_retries} attempts")
 
     def _build_flow_graph(self) -> FlowGraph:
         graph_source = "src"

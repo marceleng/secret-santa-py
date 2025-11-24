@@ -1,4 +1,5 @@
 import unittest
+from unittest.mock import patch, MagicMock
 from secret_santa.secret_santa.gift_graph import NGiftGraph
 from secret_santa.secret_santa.player import Player
 from secret_santa.secret_santa.incompatibility import Incompatibility
@@ -130,6 +131,96 @@ class TestNGiftGraph(unittest.TestCase):
             self.assertNotIn(p3, graph.assignments[p2])
         if p3 in graph.assignments:
             self.assertNotIn(p4, graph.assignments[p3])
+
+    def test_max_retries_exceeded_raises_exception(self):
+        """
+        Test that an exception is raised when a valid flow cannot be found
+        within the maximum number of retries.
+        """
+        players = {
+            Player("A", "a@example.com"),
+            Player("B", "b@example.com"),
+            Player("C", "c@example.com")
+        }
+        incompatibilities = set()
+        
+        with patch('secret_santa.secret_santa.gift_graph.NGiftGraph._build_flow_graph') as mock_build:
+            mock_flow_graph = MagicMock()
+            mock_build.return_value = mock_flow_graph
+            
+            p_a = list(players)[0]
+            p_b = list(players)[1]
+            
+            mock_src_a = MagicMock(); mock_src_a.player = p_a
+            mock_dst_b = MagicMock(); mock_dst_b.player = p_b
+            mock_src_b = MagicMock(); mock_src_b.player = p_b
+            mock_dst_a = MagicMock(); mock_dst_a.player = p_a
+
+            mock_flow = MagicMock()
+            mock_flow.graph = {
+                mock_src_a: {mock_dst_b: 1},
+                mock_src_b: {mock_dst_a: 1}
+            }
+            mock_flow_graph.compute_largest_flow.return_value = mock_flow
+            
+            with self.assertRaises(Exception) as cm:
+                NGiftGraph(players, incompatibilities, allow_2cycles=False, max_retries=3)
+            
+            self.assertIn("Could not find a valid solution after 3 attempts", str(cm.exception))
+            self.assertEqual(mock_build.call_count, 3)
+
+    def test_retry_succeeds_eventually(self):
+        """
+        Test that if the graph generation fails initially but succeeds later,
+        it returns successfully.
+        """
+        players = {
+            Player("A", "a@example.com"),
+            Player("B", "b@example.com"),
+            Player("C", "c@example.com")
+        }
+        incompatibilities = set()
+        
+        with patch('secret_santa.secret_santa.gift_graph.NGiftGraph._build_flow_graph') as mock_build:
+            mock_flow_graph_bad = MagicMock()
+            mock_flow_bad = MagicMock()
+            
+            players_list = list(players)
+            p_a = players_list[0]
+            p_b = players_list[1]
+            
+            mock_src_a = MagicMock(); mock_src_a.player = p_a
+            mock_dst_b = MagicMock(); mock_dst_b.player = p_b
+            mock_src_b = MagicMock(); mock_src_b.player = p_b
+            mock_dst_a = MagicMock(); mock_dst_a.player = p_a
+            
+            mock_flow_bad.graph = {
+                mock_src_a: {mock_dst_b: 1},
+                mock_src_b: {mock_dst_a: 1}
+            }
+            mock_flow_graph_bad.compute_largest_flow.return_value = mock_flow_bad
+
+            mock_flow_graph_good = MagicMock()
+            mock_flow_good = MagicMock()
+            p_c = players_list[2]
+            mock_src_c = MagicMock(); mock_src_c.player = p_c
+            mock_dst_c = MagicMock(); mock_dst_c.player = p_c
+            
+            mock_flow_good.graph = {
+                mock_src_a: {mock_dst_b: 1},
+                mock_src_b: {mock_dst_c: 1},
+                mock_src_c: {mock_dst_a: 1}
+            }
+            mock_flow_graph_good.compute_largest_flow.return_value = mock_flow_good
+            
+            mock_build.side_effect = [mock_flow_graph_bad, mock_flow_graph_bad, mock_flow_graph_good]
+            
+            graph = NGiftGraph(players, incompatibilities, allow_2cycles=False, max_retries=5)
+            
+            self.assertEqual(mock_build.call_count, 3)
+            self.assertIn(p_b, graph.assignments[p_a])
+            self.assertIn(p_c, graph.assignments[p_b])
+            self.assertIn(p_a, graph.assignments[p_c])
 
 if __name__ == '__main__':
     unittest.main()
