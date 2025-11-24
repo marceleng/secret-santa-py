@@ -1,4 +1,5 @@
 {
+  "giftNumber": 2,
   "players" : [
     {
       "name": "Player1",
@@ -19,6 +20,10 @@
     {
       "name": "Player5",
       "email": "player5@example.com"
+    },
+    {
+      "name": "Player6",
+      "email": "player6@example.com"
     }
   ],
   "incompatibilities" : [

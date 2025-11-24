@@ -34,10 +34,12 @@ class Mailer:
         return email
 
     def send_email(self, dst: Contact, sender: Contact, subject: str, body: str):
-        smtp_server = smtplib.SMTP(self.settings.server_fqdn, self.settings.server_port)
+        smtp_server = smtplib.SMTP_SSL(self.settings.server_fqdn, self.settings.server_port)
         smtp_server.ehlo()
-        smtp_server.starttls()
-        smtp_server.ehlo()
+        #smtp_server.starttls()
+        #print("SSL started")
+        #smtp_server.ehlo()
+        #print("Ehlo again")
         if self.settings.login:
             smtp_server.login(self.settings.login, self.settings.password)
 
