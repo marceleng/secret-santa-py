@@ -1,6 +1,6 @@
 import unittest
 from unittest.mock import patch, MagicMock
-from secret_santa.secret_santa.gift_graph import NGiftGraph
+from secret_santa.secret_santa.gift_graph import NGiftGraph, GiftAssignmentError
 from secret_santa.secret_santa.player import Player
 from secret_santa.secret_santa.incompatibility import Incompatibility
 
@@ -150,10 +150,14 @@ class TestNGiftGraph(unittest.TestCase):
             p_a = list(players)[0]
             p_b = list(players)[1]
             
-            mock_src_a = MagicMock(); mock_src_a.player = p_a
-            mock_dst_b = MagicMock(); mock_dst_b.player = p_b
-            mock_src_b = MagicMock(); mock_src_b.player = p_b
-            mock_dst_a = MagicMock(); mock_dst_a.player = p_a
+            mock_src_a = MagicMock()
+            mock_src_a.player = p_a
+            mock_dst_b = MagicMock()
+            mock_dst_b.player = p_b
+            mock_src_b = MagicMock()
+            mock_src_b.player = p_b
+            mock_dst_a = MagicMock()
+            mock_dst_a.player = p_a
 
             mock_flow = MagicMock()
             mock_flow.graph = {
@@ -162,7 +166,7 @@ class TestNGiftGraph(unittest.TestCase):
             }
             mock_flow_graph.compute_largest_flow.return_value = mock_flow
             
-            with self.assertRaises(Exception) as cm:
+            with self.assertRaises(GiftAssignmentError) as cm:
                 NGiftGraph(players, incompatibilities, allow_2cycles=False, max_attempts=3)
             
             self.assertIn("Could not find a valid solution after 3 attempts", str(cm.exception))

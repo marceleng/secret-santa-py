@@ -12,6 +12,11 @@ from secret_santa.flow_graph.flow_graph import FlowGraph, FlowEdge
 _Edge = Tuple[Player, Player]
 
 
+class GiftAssignmentError(Exception):
+    """Raised when a valid gift assignment cannot be found."""
+    pass
+
+
 class _PlayerDirection(Enum):
     GIFTER = 0
     GIFTEE = 1
@@ -54,7 +59,7 @@ class NGiftGraph:
                                 is_correct_flow = False
         
         if not is_correct_flow:
-            raise Exception(f"Could not find a valid solution after {self.max_attempts} attempts")
+            raise GiftAssignmentError(f"Could not find a valid solution after {self.max_attempts} attempts")
 
     def _build_flow_graph(self) -> FlowGraph:
         graph_source = "src"
