@@ -66,7 +66,6 @@ class NGiftGraph:
                 if not self.allow_2cycles and src.player in self.assignments[dst.player]:
                     return False
         return True
-
     def _build_flow_graph(self) -> FlowGraph:
         graph_source = "src"
         graph_sink = "sink"
