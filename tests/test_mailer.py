@@ -92,6 +92,32 @@ class TestMailer(unittest.TestCase):
         smtp_ssl.assert_called_once()
         smtp.send_message.assert_called_once()
 
+    def test_permanent_errors_are_not_retried(self, smtp_ssl):
+        smtp = smtp_ssl.return_value
+        for error in (smtplib.SMTPRecipientsRefused({"a@example.com": (550, b"no such user")}),
+                      smtplib.SMTPDataError(554, b"rejected"),
+                      smtplib.SMTPDataError(451, b"try again later")):
+            smtp.send_message.reset_mock()
+            smtp.send_message.side_effect = error
+            with self.assertRaises(type(error)):
+                with Mailer(SETTINGS) as mailer:
+                    mailer.send_email(Contact("A", "a@example.com"), SENDER, "Subject", "Body")
+            smtp.send_message.assert_called_once()
+        self.assertEqual(smtp_ssl.call_count, 3)  # one connection per Mailer, no reconnection
+
+    def test_second_421_is_not_retried_again(self, smtp_ssl):
+        first, second = unittest.mock.MagicMock(), unittest.mock.MagicMock()
+        smtp_ssl.side_effect = [first, second]
+        busy = smtplib.SMTPRecipientsRefused({"a@example.com": (421, b"too many")})
+        first.send_message.side_effect = busy
+        second.send_message.side_effect = busy
+        with self.assertRaises(smtplib.SMTPRecipientsRefused):
+            with Mailer(SETTINGS) as mailer:
+                mailer.send_email(Contact("A", "a@example.com"), SENDER, "Subject", "Body")
+        self.assertEqual(smtp_ssl.call_count, 2)
+        first.send_message.assert_called_once()
+        second.send_message.assert_called_once()
+
 
 if __name__ == '__main__':
     unittest.main()

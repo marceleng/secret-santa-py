@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import errno
 import json
 import os
 import shlex
@@ -10,7 +11,6 @@ import tempfile
 from getpass import getpass
 
 from optparse import OptionParser
-from configobj import ConfigObj
 
 from secret_santa.mailer import Mailer, Contact, MailerSettings
 from secret_santa.secret_santa.gift_graph import NGiftGraph
@@ -44,7 +44,24 @@ def save_draw(path: str, assignments: Assignments):
             f.write(content)
             f.flush()
             os.fsync(f.fileno())
-        os.link(tmp_path, path)
+        try:
+            os.link(tmp_path, path)
+        except OSError as e:
+            if e.errno not in (errno.EPERM, errno.ENOTSUP, errno.EOPNOTSUPP):
+                raise
+            # No hard links on this filesystem (FAT/exFAT, some network shares):
+            # create the file exclusively instead, and remove it if the write fails.
+            # 0o600 like mkstemp: the draw reveals every assignment.
+            f = os.fdopen(os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600), 'w')
+            try:
+                with f:
+                    f.write(content)
+                    f.flush()
+                    os.fsync(f.fileno())
+            except BaseException:
+                # Unlink after closing: some network shares refuse to delete an open file.
+                os.unlink(path)
+                raise
     finally:
         os.unlink(tmp_path)
 
@@ -117,8 +134,11 @@ def main(assignments: Assignments, mailer_settings: MailerSettings, email_subjec
                 try:
                     mailer.send_email(dst_contact, src_contact, email_subject, message_body)
                 except smtplib.SMTPRecipientsRefused as e:
-                    # A bad address only affects this player: carry on with the others.
                     in_flight = None
+                    if not all(code >= 500 for code, _ in e.recipients.values()):
+                        # 4xx is a temporary server refusal, not a bad address: stop here.
+                        raise
+                    # A bad address only affects this player: carry on with the others.
                     refused.append(dst_contact.name)
                     print(f'Address of {dst_contact.name} ({dst_contact.email}) refused: {e.recipients}')
                     continue
@@ -136,6 +156,8 @@ def main(assignments: Assignments, mailer_settings: MailerSettings, email_subjec
 
 
 if __name__ == '__main__':
+    # Imported here so that the tests can import this module without configobj.
+    from configobj import ConfigObj
 
     usage = "usage: %prog [options] input_file"
     parser = OptionParser(usage=usage)

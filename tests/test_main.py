@@ -1,3 +1,4 @@
+import errno
 import io
 import json
 import os
@@ -52,6 +53,23 @@ class TestSaveDraw(unittest.TestCase):
                 main.save_draw(self.path, self.assignments)
         self.assertEqual(os.listdir(self.dir.name), [])
 
+    def test_falls_back_without_hard_links(self):
+        with patch("main.os.link", side_effect=OSError(errno.EPERM, "no hard links")):
+            main.save_draw(self.path, self.assignments)
+            with self.assertRaises(FileExistsError):
+                main.save_draw(self.path, self.assignments)
+        with open(self.path) as f:
+            self.assertEqual(json.load(f), {"assignments": {"A": ["B"], "B": ["A"]}})
+        self.assertEqual(os.listdir(self.dir.name), ["draw.json"])
+        self.assertEqual(os.stat(self.path).st_mode & 0o777, 0o600)
+
+    def test_failed_fallback_write_leaves_nothing(self):
+        with patch("main.os.link", side_effect=OSError(errno.ENOTSUP, "no hard links")), \
+                patch("main.os.fsync", side_effect=[None, OSError("disk full")]):
+            with self.assertRaises(OSError):
+                main.save_draw(self.path, self.assignments)
+        self.assertEqual(os.listdir(self.dir.name), [])
+
 
 @patch("main.Mailer")
 class TestMainSending(unittest.TestCase):
@@ -78,8 +96,18 @@ class TestMainSending(unittest.TestCase):
         out, exc, mailer = self.run_main(mailer_cls, [refused, None, None])
         self.assertEqual(mailer.send_email.call_count, 3)
         self.assertIsInstance(exc, SystemExit)
+        self.assertEqual(exc.code, 1)
         self.assertIn("python main.py --resend --only A", out)
         self.assertNotIn("--only B", out)
+
+    def test_temporary_refusal_is_not_reported_as_a_bad_address(self, mailer_cls):
+        busy = smtplib.SMTPRecipientsRefused({"a@example.com": (421, b"try again later")})
+        out, exc, mailer = self.run_main(mailer_cls, [busy, None, None])
+        self.assertIs(exc, busy)
+        self.assertEqual(mailer.send_email.call_count, 1)
+        self.assertNotIn("Address", out)
+        self.assertNotIn("interrupted", out)
+        self.assertIn("--only A --only B", out)
 
     def test_interrupt_reports_and_flags_in_flight(self, mailer_cls):
         out, exc, _ = self.run_main(mailer_cls, [None, KeyboardInterrupt()])
