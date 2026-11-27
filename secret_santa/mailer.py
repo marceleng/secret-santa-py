@@ -1,4 +1,5 @@
 import smtplib
+import ssl
 from dataclasses import dataclass
 from email.message import EmailMessage
 from email.utils import localtime
@@ -34,7 +35,9 @@ class Mailer:
         return email
 
     def send_email(self, dst: Contact, sender: Contact, subject: str, body: str):
-        smtp_server = smtplib.SMTP_SSL(self.settings.server_fqdn, self.settings.server_port)
+        # Without an explicit context, SMTP_SSL does not verify the server certificate.
+        smtp_server = smtplib.SMTP_SSL(self.settings.server_fqdn, self.settings.server_port,
+                                       context=ssl.create_default_context())
         smtp_server.ehlo()
         #smtp_server.starttls()
         #print("SSL started")
