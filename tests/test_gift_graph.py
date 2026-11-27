@@ -292,5 +292,17 @@ class TestNGiftGraph(unittest.TestCase):
         with self.assertRaises(GiftAssignmentError):
             graph.verify_assignments()
 
+    def test_no_2cycles_with_example_input(self):
+        """
+        Scenario: the shipped input.example.json (6 players, 2 gifts, 2 incompatibilities)
+        with 2-cycles forbidden, as main.py does. Unmocked: this used to fail ~90% of the time.
+        """
+        players = [Player(f"P{i}", f"p{i}@example.com") for i in range(1, 7)]
+        incompatibilities = {Incompatibility(players[0], players[1]),
+                             Incompatibility(players[2], players[3])}
+        for _ in range(20):
+            graph = NGiftGraph(set(players), incompatibilities, number_of_gifts=2, allow_2cycles=False)
+            graph.verify_assignments()
+
 if __name__ == '__main__':
     unittest.main()
