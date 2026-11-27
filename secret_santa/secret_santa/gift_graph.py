@@ -37,7 +37,9 @@ class NGiftGraph:
     incompatibilities: set[Incompatibility]
     number_of_gifts: int = field(default=1)
     allow_2cycles: bool = field(default=True)
-    max_attempts: int = field(default=3)
+    # Attempts are cheap (well under a millisecond for a family-sized group), and with
+    # allow_2cycles=False a single attempt can succeed only a few percent of the time.
+    max_attempts: int = field(default=1000)
     assignments: defaultdict[Player, set[Player]] = field(init=False)
     flow_graph: FlowGraph = field(init=False)
 
