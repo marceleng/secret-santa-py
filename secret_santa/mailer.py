@@ -1,6 +1,6 @@
 import smtplib
 import ssl
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from email.message import EmailMessage
 from email.utils import localtime
 from email.headerregistry import Address
@@ -21,7 +21,33 @@ class MailerSettings:
 
 @dataclass
 class Mailer:
+    """Sends emails over a single SMTP connection.
+
+    Use as a context manager: connecting and logging in happen on entry, so
+    network and authentication errors surface before any email is sent.
+    """
     settings: MailerSettings
+    _smtp: smtplib.SMTP_SSL | None = field(default=None, init=False, repr=False)
+
+    def __enter__(self) -> "Mailer":
+        # Without an explicit context, SMTP_SSL does not verify the server certificate.
+        smtp = smtplib.SMTP_SSL(self.settings.server_fqdn, self.settings.server_port,
+                                context=ssl.create_default_context())
+        try:
+            if self.settings.login:
+                smtp.login(self.settings.login, self.settings.password)
+        except BaseException:
+            smtp.close()
+            raise
+        self._smtp = smtp
+        return self
+
+    def __exit__(self, *exc_info):
+        smtp, self._smtp = self._smtp, None
+        try:
+            smtp.quit()
+        except smtplib.SMTPException:
+            smtp.close()
 
     @classmethod
     def __generate_msg(cls, dst: Contact, sender: Contact, subject: str, body: str) -> str:
@@ -35,17 +61,7 @@ class Mailer:
         return email
 
     def send_email(self, dst: Contact, sender: Contact, subject: str, body: str):
-        # Without an explicit context, SMTP_SSL does not verify the server certificate.
-        smtp_server = smtplib.SMTP_SSL(self.settings.server_fqdn, self.settings.server_port,
-                                       context=ssl.create_default_context())
-        smtp_server.ehlo()
-        #smtp_server.starttls()
-        #print("SSL started")
-        #smtp_server.ehlo()
-        #print("Ehlo again")
-        if self.settings.login:
-            smtp_server.login(self.settings.login, self.settings.password)
-
+        if self._smtp is None:
+            raise RuntimeError("Mailer is not connected: use it as a context manager")
         msg = self.__generate_msg(dst, sender, subject, body)
-        smtp_server.send_message(msg)
-        smtp_server.quit()
+        self._smtp.send_message(msg)

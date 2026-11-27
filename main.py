@@ -30,23 +30,26 @@ def main(players: set[Player], incompatibilities: set[Incompatibility], giftNumb
          allow_2cycles=False)
     graph.verify_assignments()
     print("Graph is correct!")
-    mailer = Mailer(mailer_settings)
     if logfile:
         with open(logfile, 'w') as l:
             lines = [ f'{santa.name} {format_recipient_names(dsts)}\n' for santa, dsts in graph.assignments.items()]
             l.writelines(lines)
-    for src, dsts in graph.assignments.items():
-        message_body = email_body_template.format(santa=src.name, recipient=format_recipient_names(dsts))
-        if dry:
-            print(f'Mail to {src.name} ({src.email}):')
-            print(message_body)
-        else:
-            dst_contact = Contact(src.name, src.email)
-            mailer.send_email(dst_contact,
-                            src_contact,
-                            email_subject,
-                            message_body)
 
+    messages = [
+        (Contact(src.name, src.email),
+         email_body_template.format(santa=src.name, recipient=format_recipient_names(dsts)))
+        for src, dsts in graph.assignments.items()]
+
+    if dry:
+        for dst_contact, message_body in messages:
+            print(f'Mail to {dst_contact.name} ({dst_contact.email}):')
+            print(message_body)
+        return
+
+    # Connect and log in once, before sending anything.
+    with Mailer(mailer_settings) as mailer:
+        for dst_contact, message_body in messages:
+            mailer.send_email(dst_contact, src_contact, email_subject, message_body)
 
 if __name__ == '__main__':
 
