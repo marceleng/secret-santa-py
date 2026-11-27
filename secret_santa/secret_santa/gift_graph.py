@@ -42,6 +42,7 @@ class NGiftGraph:
     flow_graph: FlowGraph = field(init=False)
 
     def __post_init__(self):
+        expected_gifts = len(self.players) * self.number_of_gifts
         is_correct_flow = False
         attempts = 0
         while not is_correct_flow and attempts < self.max_attempts:
@@ -49,6 +50,12 @@ class NGiftGraph:
             self.assignments = defaultdict(set)
             flow_graph = self._build_flow_graph()
             flow = flow_graph.compute_largest_flow()
+            # The max flow value does not depend on the random exploration order,
+            # so a short flow means no assignment exists: retrying is pointless.
+            if flow.value < expected_gifts:
+                raise GiftAssignmentError(
+                    f"No valid assignment exists: only {flow.value} of the {expected_gifts} "
+                    f"required gifts can be assigned. Check the number of gifts and the incompatibilities.")
             is_correct_flow = self._extract_assignments_from_flow(flow)
         
         if not is_correct_flow:
@@ -97,16 +104,26 @@ class NGiftGraph:
             Incompatibility(src.player, dst.player) in self.incompatibilities
 
     def verify_assignments(self):
-        gifts_per_assignee: defaultdict[Player, int] = defaultdict(int)
-        for src, assignment_arr in self.assignments.items():
-            assert (len(assignment_arr) is self.number_of_gifts)  # Has right number of assignees
-            for dst in assignment_arr:
-                assert (src is not dst)  # Is not self-assigned
-                assert (Incompatibility(src, dst) not in self.incompatibilities)  # Is not incompatible
-                gifts_per_assignee[dst] += 1
+        """Check that the assignments satisfy every rule; raise GiftAssignmentError otherwise."""
+        gifts_received: defaultdict[Player, int] = defaultdict(int)
+        for src in self.players:
+            dsts = self.assignments.get(src, set())
+            if len(dsts) != self.number_of_gifts:
+                raise GiftAssignmentError(
+                    f"{src.name} gives {len(dsts)} gifts instead of {self.number_of_gifts}")
+            for dst in dsts:
+                if dst == src:
+                    raise GiftAssignmentError(f"{src.name} is assigned to themselves")
+                if Incompatibility(src, dst) in self.incompatibilities:
+                    raise GiftAssignmentError(f"{src.name} is assigned to incompatible {dst.name}")
+                if not self.allow_2cycles and src in self.assignments.get(dst, set()):
+                    raise GiftAssignmentError(f"{src.name} and {dst.name} are assigned to each other")
+                gifts_received[dst] += 1
 
-        assert (len(gifts_per_assignee) == len(self.players))  # Everyone has gifts
-        assert (set(gifts_per_assignee.values()) == {self.number_of_gifts})  # Everyone has the right number of gifts
+        for player in self.players:
+            if gifts_received[player] != self.number_of_gifts:
+                raise GiftAssignmentError(
+                    f"{player.name} receives {gifts_received[player]} gifts instead of {self.number_of_gifts}")
 
 
 @dataclass(order=False)
