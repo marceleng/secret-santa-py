@@ -135,3 +135,6 @@ dmypy.json
 /config.ini
 /input.json
 /mails
+
+# Saved Secret Santa draw (contains the assignments)
+draw.json

@@ -23,9 +23,30 @@ def format_recipient_names(recipients: set[Player], and_word="and") -> str:
         recipient_names = [r.name for r in recipients]
         return f'{", ".join(recipient_names[:-1])} {and_word} {recipient_names[-1]}'
 
-def main(players: set[Player], incompatibilities: set[Incompatibility], giftNumber: int, mailer_settings: MailerSettings,
-         email_subject: str, email_body_template: str, src_contact: Contact, dry: bool, logfile: str | None):
-    #graph = GiftGraph(players, incompatibilities)
+Assignments = dict[Player, set[Player]]
+
+
+def save_draw(path: str, assignments: Assignments):
+    """Write the draw to `path`, refusing to overwrite an existing draw."""
+    draw = {"assignments": {santa.name: sorted(r.name for r in recipients)
+                            for santa, recipients in assignments.items()}}
+    with open(path, 'x') as f:
+        json.dump(draw, f, indent=2)
+        f.write('\n')
+
+
+def load_draw(path: str, players_by_name: dict[str, Player]) -> Assignments:
+    with open(path) as f:
+        draw = json.load(f)
+    unknown = {name for santa, recipients in draw["assignments"].items()
+               for name in [santa, *recipients] if name not in players_by_name}
+    if unknown:
+        raise ValueError(f"Draw file {path} names unknown players: {', '.join(sorted(unknown))}")
+    return {players_by_name[santa]: {players_by_name[r] for r in recipients}
+            for santa, recipients in draw["assignments"].items()}
+
+
+def draw_assignments(players: set[Player], incompatibilities: set[Incompatibility], giftNumber: int) -> Assignments:
     graph = NGiftGraph(
          players=players,
          incompatibilities=incompatibilities,
@@ -33,15 +54,16 @@ def main(players: set[Player], incompatibilities: set[Incompatibility], giftNumb
          allow_2cycles=False)
     graph.verify_assignments()
     print("Graph is correct!")
-    if logfile:
-        with open(logfile, 'w') as l:
-            lines = [ f'{santa.name} {format_recipient_names(dsts)}\n' for santa, dsts in graph.assignments.items()]
-            l.writelines(lines)
+    return dict(graph.assignments)
 
+
+def main(assignments: Assignments, mailer_settings: MailerSettings, email_subject: str,
+         email_body_template: str, src_contact: Contact, dry: bool, only: set[str] | None = None):
     messages = [
         (Contact(src.name, src.email),
          email_body_template.format(santa=src.name, recipient=format_recipient_names(dsts)))
-        for src, dsts in graph.assignments.items()]
+        for src, dsts in assignments.items()
+        if only is None or src.name in only]
 
     if dry:
         for dst_contact, message_body in messages:
@@ -49,32 +71,54 @@ def main(players: set[Player], incompatibilities: set[Incompatibility], giftNumb
             print(message_body)
         return
 
-    # Connect and log in once, before sending anything.
-    with Mailer(mailer_settings) as mailer:
-        for dst_contact, message_body in messages:
-            mailer.send_email(dst_contact, src_contact, email_subject, message_body)
+    sent: list[str] = []
+    try:
+        # Connect and log in once, before sending anything.
+        with Mailer(mailer_settings) as mailer:
+            for dst_contact, message_body in messages:
+                mailer.send_email(dst_contact, src_contact, email_subject, message_body)
+                sent.append(dst_contact.name)
+                print(f'Sent to {dst_contact.name}')
+    except Exception:
+        remaining = [c.name for c, _ in messages if c.name not in sent]
+        print(f'Sending failed. Already sent: {", ".join(sent) or "nobody"}.')
+        print('To send the rest from the same draw, rerun with --resend '
+              + ' '.join(f'--only "{name}"' for name in remaining))
+        raise
 
 if __name__ == '__main__':
 
     usage = "usage: %prog [options] input_file"
     parser = OptionParser(usage=usage)
     parser.add_option("-d", "--dry", dest="dry_run", action="store_true", default=False,
-                      help="Dry run - do not send emails")
+                      help="Dry run - do not send emails nor save the draw")
     parser.add_option("--smtp-login", dest="login", action="store",
                       help="Login for the SMTP server. The password is read from the SMTP_PASSWORD "
                            "environment variable, or prompted for if it is not set")
     parser.add_option("-c", "--config", dest="config_file", action="store", default="config.ini",
                       help="path to configuration file")
-    parser.add_option("--logfile", dest="logfile", action="store", default=None, help="path to log file")
+    parser.add_option("--draw-file", dest="draw_file", action="store", default="draw.json",
+                      help="where the draw is saved before sending emails (default: %default). "
+                           "An existing file is never overwritten")
+    parser.add_option("--resend", dest="resend", action="store_true", default=False,
+                      help="send emails from the draw saved in --draw-file instead of drawing again")
+    parser.add_option("--only", dest="only", action="append", metavar="NAME",
+                      help="with --resend, only email this player (repeatable)")
 
     (options, [inputfile]) = parser.parse_args()
     dry = options.dry_run
+    if options.only and not options.resend:
+        parser.error("--only requires --resend")
+    if options.resend and not os.path.exists(options.draw_file):
+        parser.error(f"--resend: draw file {options.draw_file} does not exist")
+    if not options.resend and not dry and os.path.exists(options.draw_file):
+        parser.error(f"draw file {options.draw_file} already exists: use --resend to send it again, "
+                     "or move it away to draw again")
 
     # Never take the password as an argument: it would leak into shell history and `ps`.
     password = None
     if options.login and not dry:
         password = os.environ.get("SMTP_PASSWORD") or getpass(f"SMTP password for {options.login}: ")
-    logfile = options.logfile
 
     config = ConfigObj(options.config_file)
 
@@ -102,5 +146,15 @@ if __name__ == '__main__':
                                     one_way=inc.get("oneWay", False)),
         input_data["incompatibilities"]))
 
-    main(input_players, input_incompatibilities, giftNumber, mailer_settings,
-         email_subject, email_body_template, src_contact,  dry, logfile)
+    if options.resend:
+        assignments = load_draw(options.draw_file, players_by_name)
+        if options.only and (unknown := set(options.only) - {p.name for p in assignments}):
+            parser.error(f"--only: unknown players in the draw: {', '.join(sorted(unknown))}")
+    else:
+        assignments = draw_assignments(input_players, input_incompatibilities, giftNumber)
+        if not dry:
+            save_draw(options.draw_file, assignments)
+            print(f"Draw saved to {options.draw_file}")
+
+    main(assignments, mailer_settings, email_subject, email_body_template, src_contact, dry,
+         set(options.only) if options.only else None)
