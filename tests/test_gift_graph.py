@@ -160,6 +160,7 @@ class TestNGiftGraph(unittest.TestCase):
             mock_dst_a.player = p_a
 
             mock_flow = MagicMock()
+            mock_flow.value = 3  # 3 players x 1 gift: a complete flow
             mock_flow.graph = {
                 mock_src_a: {mock_dst_b: 1},
                 mock_src_b: {mock_dst_a: 1}
@@ -187,6 +188,7 @@ class TestNGiftGraph(unittest.TestCase):
         with patch('secret_santa.secret_santa.gift_graph.NGiftGraph._build_flow_graph') as mock_build:
             mock_flow_graph_bad = MagicMock()
             mock_flow_bad = MagicMock()
+            mock_flow_bad.value = 3  # 3 players x 1 gift: a complete flow
             
             players_list = list(players)
             p_a = players_list[0]
@@ -209,6 +211,7 @@ class TestNGiftGraph(unittest.TestCase):
 
             mock_flow_graph_good = MagicMock()
             mock_flow_good = MagicMock()
+            mock_flow_good.value = 3  # 3 players x 1 gift: a complete flow
             p_c = players_list[2]
             mock_src_c = MagicMock()
             mock_src_c.player = p_c
@@ -230,6 +233,64 @@ class TestNGiftGraph(unittest.TestCase):
             self.assertIn(p_b, graph.assignments[p_a])
             self.assertIn(p_c, graph.assignments[p_b])
             self.assertIn(p_a, graph.assignments[p_c])
+
+    def test_infeasible_input_raises_without_retrying(self):
+        """
+        Scenario: A is incompatible with both B and C, so A can gift nobody.
+        Verification: the constructor raises at once instead of returning a partial assignment.
+        """
+        pa = Player("A", "a@example.com")
+        pb = Player("B", "b@example.com")
+        pc = Player("C", "c@example.com")
+        incompatibilities = {Incompatibility(pa, pb), Incompatibility(pa, pc)}
+
+        with patch.object(NGiftGraph, '_build_flow_graph', autospec=True,
+                          side_effect=NGiftGraph._build_flow_graph) as spy:
+            with self.assertRaises(GiftAssignmentError) as cm:
+                NGiftGraph({pa, pb, pc}, incompatibilities, number_of_gifts=1, max_attempts=10)
+        self.assertIn("No valid assignment exists", str(cm.exception))
+        self.assertEqual(spy.call_count, 1)
+
+    def test_too_many_gifts_raises(self):
+        """Scenario: 3 players cannot each give 3 gifts without gifting themselves."""
+        players = {Player(n, f"{n}@example.com") for n in "ABC"}
+        with self.assertRaises(GiftAssignmentError):
+            NGiftGraph(players, set(), number_of_gifts=3)
+
+    def _valid_graph(self):
+        self.pa = Player("A", "a@example.com")
+        self.pb = Player("B", "b@example.com")
+        self.pc = Player("C", "c@example.com")
+        graph = NGiftGraph({self.pa, self.pb, self.pc}, set(), number_of_gifts=1, allow_2cycles=False)
+        graph.verify_assignments()
+        return graph
+
+    def test_verify_rejects_missing_gift(self):
+        graph = self._valid_graph()
+        graph.assignments[self.pa] = set()
+        with self.assertRaises(GiftAssignmentError):
+            graph.verify_assignments()
+
+    def test_verify_rejects_self_assignment(self):
+        graph = self._valid_graph()
+        graph.assignments = {self.pa: {self.pa}, self.pb: {self.pc}, self.pc: {self.pb}}
+        with self.assertRaises(GiftAssignmentError):
+            graph.verify_assignments()
+
+    def test_verify_rejects_incompatibility(self):
+        graph = self._valid_graph()
+        graph.incompatibilities = {Incompatibility(self.pa, next(iter(graph.assignments[self.pa])))}
+        with self.assertRaises(GiftAssignmentError):
+            graph.verify_assignments()
+
+    def test_verify_rejects_2cycle_when_disallowed(self):
+        players = [Player(n, f"{n}@example.com") for n in "ABCD"]
+        pa, pb, pc, pd = players
+        graph = NGiftGraph(set(players), set(), number_of_gifts=1)
+        graph.allow_2cycles = False
+        graph.assignments = {pa: {pb}, pb: {pa}, pc: {pd}, pd: {pc}}
+        with self.assertRaises(GiftAssignmentError):
+            graph.verify_assignments()
 
 if __name__ == '__main__':
     unittest.main()
