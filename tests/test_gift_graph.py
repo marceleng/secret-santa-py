@@ -304,5 +304,12 @@ class TestNGiftGraph(unittest.TestCase):
             graph = NGiftGraph(set(players), incompatibilities, number_of_gifts=2, allow_2cycles=False)
             graph.verify_assignments()
 
+    def test_one_way_incompatibility(self):
+        """A->B, B->C, C->A forbidden one way: the only draw left is the reverse cycle."""
+        a, b, c = (Player(n, f"{n}@example.com") for n in "ABC")
+        graph = NGiftGraph({a, b, c}, set(), one_way_incompatibilities={(a, b), (b, c), (c, a)})
+        graph.verify_assignments()
+        self.assertEqual(dict(graph.assignments), {a: {c}, c: {b}, b: {a}})
+
 if __name__ == '__main__':
     unittest.main()

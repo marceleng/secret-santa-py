@@ -40,6 +40,8 @@ class NGiftGraph:
     # Attempts are cheap (well under a millisecond for a family-sized group), and with
     # allow_2cycles=False a single attempt can succeed only a few percent of the time.
     max_attempts: int = field(default=1000)
+    # (gifter, giftee) pairs forbidden in that direction only, e.g. last year's draw.
+    one_way_incompatibilities: set[Tuple[Player, Player]] = field(default_factory=set)
     assignments: defaultdict[Player, set[Player]] = field(init=False)
     flow_graph: FlowGraph = field(init=False)
 
@@ -102,8 +104,11 @@ class NGiftGraph:
         return FlowGraph(flow_edges, graph_source, graph_sink)
 
     def _is_invalid_edge(self, src: _DirectedPlayer, dst: _DirectedPlayer) -> bool:
-        return src.player == dst.player or \
-            Incompatibility(src.player, dst.player) in self.incompatibilities
+        return src.player == dst.player or self._is_incompatible(src.player, dst.player)
+
+    def _is_incompatible(self, src: Player, dst: Player) -> bool:
+        return Incompatibility(src, dst) in self.incompatibilities or \
+            (src, dst) in self.one_way_incompatibilities
 
     def verify_assignments(self):
         """Check that the assignments satisfy every rule; raise GiftAssignmentError otherwise."""
@@ -116,7 +121,7 @@ class NGiftGraph:
             for dst in dsts:
                 if dst == src:
                     raise GiftAssignmentError(f"{src.name} is assigned to themselves")
-                if Incompatibility(src, dst) in self.incompatibilities:
+                if self._is_incompatible(src, dst):
                     raise GiftAssignmentError(f"{src.name} is assigned to incompatible {dst.name}")
                 if not self.allow_2cycles and src in self.assignments.get(dst, set()):
                     raise GiftAssignmentError(f"{src.name} and {dst.name} are assigned to each other")

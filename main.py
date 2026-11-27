@@ -21,13 +21,15 @@ def format_recipient_names(recipients: set[Player], and_word="and") -> str:
         return f'{", ".join(recipient_names[:-1])} {and_word} {recipient_names[-1]}'
 
 def main(players: set[Player], incompatibilities: set[Incompatibility], giftNumber: int, mailer_settings: MailerSettings,
-         email_subject: str, email_body_template: str, src_contact: Contact, dry: bool, logfile: str | None):
+         email_subject: str, email_body_template: str, src_contact: Contact, dry: bool, logfile: str | None,
+         one_way_incompatibilities: set[tuple[Player, Player]] = frozenset()):
     #graph = GiftGraph(players, incompatibilities)
     graph = NGiftGraph(
          players=players,
          incompatibilities=incompatibilities,
          number_of_gifts=giftNumber,
-         allow_2cycles=False)
+         allow_2cycles=False,
+         one_way_incompatibilities=set(one_way_incompatibilities))
     graph.verify_assignments()
     print("Graph is correct!")
     if logfile:
@@ -95,6 +97,9 @@ if __name__ == '__main__':
         lambda inc: Incompatibility(players_by_name[inc["fst"]],
                                     players_by_name[inc["snd"]]),
         input_data["incompatibilities"]))
+    # Optional: "from" may not gift "to", but "to" may still gift "from".
+    input_one_way = {(players_by_name[inc["from"]], players_by_name[inc["to"]])
+                     for inc in input_data.get("oneWayIncompatibilities", [])}
 
     main(input_players, input_incompatibilities, giftNumber, mailer_settings,
-         email_subject, email_body_template, src_contact,  dry, logfile)
+         email_subject, email_body_template, src_contact,  dry, logfile, input_one_way)

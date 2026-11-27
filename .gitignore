@@ -130,3 +130,9 @@ dmypy.json
 
 #Vim swap
 .swp
+
+# Local draw data (personal emails, SMTP config)
+/config.ini
+/input.json
+/mails
+/tirage.log
