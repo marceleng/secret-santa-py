@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import json
+import os
+
+from getpass import getpass
 
 from optparse import OptionParser
 from configobj import ConfigObj
@@ -57,19 +60,20 @@ if __name__ == '__main__':
     parser = OptionParser(usage=usage)
     parser.add_option("-d", "--dry", dest="dry_run", action="store_true", default=False,
                       help="Dry run - do not send emails")
-    parser.add_option("--smtp-login", dest="login", action="store", help="Login for the SMTP server")
-    parser.add_option("--smtp-password", dest="password", action="store", help="Password for the SMTP server")
+    parser.add_option("--smtp-login", dest="login", action="store",
+                      help="Login for the SMTP server. The password is read from the SMTP_PASSWORD "
+                           "environment variable, or prompted for if it is not set")
     parser.add_option("-c", "--config", dest="config_file", action="store", default="config.ini",
                       help="path to configuration file")
     parser.add_option("--logfile", dest="logfile", action="store", default=None, help="path to log file")
 
     (options, [inputfile]) = parser.parse_args()
-    if options.login and not options.password:
-        parser.error("Got a login but no password for SMTP server")
-    if not options.login and options.password:
-        parser.error("Got a password but no login for SMTP server")
-
     dry = options.dry_run
+
+    # Never take the password as an argument: it would leak into shell history and `ps`.
+    password = None
+    if options.login and not dry:
+        password = os.environ.get("SMTP_PASSWORD") or getpass(f"SMTP password for {options.login}: ")
     logfile = options.logfile
 
     config = ConfigObj(options.config_file)
@@ -78,7 +82,7 @@ if __name__ == '__main__':
         server_fqdn=config["SMTP Server"]["domain"],
         server_port=config["SMTP Server"]["port"],
         login=options.login,
-        password=options.password
+        password=password
     )
 
     src_contact = Contact(name=config["Email Template"]["sender name"],
