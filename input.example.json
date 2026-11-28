@@ -34,12 +34,11 @@
     {
       "fst": "Player3",
       "snd": "Player4"
-    }
-  ],
-  "oneWayIncompatibilities" : [
+    },
     {
-      "from": "Player5",
-      "to": "Player6"
+      "fst": "Player1",
+      "snd": "Player3",
+      "oneWay": true
     }
   ]
 }

@@ -12,6 +12,11 @@ from secret_santa.flow_graph.flow_graph import Flow, FlowGraph, FlowEdge
 _Edge = Tuple[Player, Player]
 
 
+def forbidden_pairs(incompatibilities: set[Incompatibility]) -> set[_Edge]:
+    """All the (gifter, giftee) pairs ruled out, whether one-way or reciprocal."""
+    return {pair for inc in incompatibilities for pair in inc.forbidden_pairs()}
+
+
 class GiftAssignmentError(Exception):
     """Raised when a valid gift assignment cannot be found."""
     pass
@@ -40,8 +45,6 @@ class NGiftGraph:
     # Attempts are cheap (well under a millisecond for a family-sized group), and with
     # allow_2cycles=False a single attempt can succeed only a few percent of the time.
     max_attempts: int = field(default=1000)
-    # (gifter, giftee) pairs forbidden in that direction only, e.g. last year's draw.
-    one_way_incompatibilities: set[Tuple[Player, Player]] = field(default_factory=set)
     assignments: defaultdict[Player, set[Player]] = field(init=False)
     flow_graph: FlowGraph = field(init=False)
 
@@ -96,23 +99,18 @@ class NGiftGraph:
             giftees))
 
         # Edges gifter -> giftee
+        forbidden = forbidden_pairs(self.incompatibilities)
         for (src, dst) in product(gifters, giftees):
-            if not self._is_invalid_edge(src, dst):
+            if src.player != dst.player and (src.player, dst.player) not in forbidden:
                 flow_edges.append(
                     FlowEdge(src, dst, 1)
                 )
         return FlowGraph(flow_edges, graph_source, graph_sink)
 
-    def _is_invalid_edge(self, src: _DirectedPlayer, dst: _DirectedPlayer) -> bool:
-        return src.player == dst.player or self._is_incompatible(src.player, dst.player)
-
-    def _is_incompatible(self, src: Player, dst: Player) -> bool:
-        return Incompatibility(src, dst) in self.incompatibilities or \
-            (src, dst) in self.one_way_incompatibilities
-
     def verify_assignments(self):
         """Check that the assignments satisfy every rule; raise GiftAssignmentError otherwise."""
         gifts_received: defaultdict[Player, int] = defaultdict(int)
+        forbidden = forbidden_pairs(self.incompatibilities)
         for src in self.players:
             dsts = self.assignments.get(src, set())
             if len(dsts) != self.number_of_gifts:
@@ -121,7 +119,7 @@ class NGiftGraph:
             for dst in dsts:
                 if dst == src:
                     raise GiftAssignmentError(f"{src.name} is assigned to themselves")
-                if self._is_incompatible(src, dst):
+                if (src, dst) in forbidden:
                     raise GiftAssignmentError(f"{src.name} is assigned to incompatible {dst.name}")
                 if not self.allow_2cycles and src in self.assignments.get(dst, set()):
                     raise GiftAssignmentError(f"{src.name} and {dst.name} are assigned to each other")
@@ -147,7 +145,7 @@ class GiftGraph:
 
     def _is_invalid_edge(self, edge: _Edge) -> bool:
         (fst, snd) = edge
-        return fst == snd or Incompatibility(fst, snd) in self.incompatibilities
+        return fst == snd or edge in forbidden_pairs(self.incompatibilities)
 
     def _build_initial_graph(self) -> list[_Edge]:
         ret = list(itertools.filterfalse(self._is_invalid_edge, product(self.players, self.players)))
