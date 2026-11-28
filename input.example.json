@@ -34,6 +34,11 @@
     {
       "fst": "Player3",
       "snd": "Player4"
+    },
+    {
+      "fst": "Player1",
+      "snd": "Player3",
+      "oneWay": true
     }
   ]
 }

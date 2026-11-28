@@ -93,7 +93,9 @@ if __name__ == '__main__':
     players_by_name = {p.name: p for p in input_players}
     input_incompatibilities = set(map(
         lambda inc: Incompatibility(players_by_name[inc["fst"]],
-                                    players_by_name[inc["snd"]]),
+                                    players_by_name[inc["snd"]],
+                                    # Optional: only "fst" gifting "snd" is forbidden.
+                                    one_way=inc.get("oneWay", False)),
         input_data["incompatibilities"]))
 
     main(input_players, input_incompatibilities, giftNumber, mailer_settings,

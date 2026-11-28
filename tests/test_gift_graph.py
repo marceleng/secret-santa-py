@@ -304,5 +304,32 @@ class TestNGiftGraph(unittest.TestCase):
             graph = NGiftGraph(set(players), incompatibilities, number_of_gifts=2, allow_2cycles=False)
             graph.verify_assignments()
 
+    def test_one_way_incompatibility(self):
+        """A->B, B->C, C->A forbidden one way: the only draw left is the reverse cycle."""
+        a, b, c = (Player(n, f"{n}@example.com") for n in "ABC")
+        one_way = {Incompatibility(a, b, one_way=True), Incompatibility(b, c, one_way=True),
+                   Incompatibility(c, a, one_way=True)}
+        graph = NGiftGraph({a, b, c}, one_way)
+        graph.verify_assignments()
+        self.assertEqual(dict(graph.assignments), {a: {c}, c: {b}, b: {a}})
+
+    def test_verify_rejects_one_way_incompatible_assignment(self):
+        """verify_assignments refuses the forbidden direction and accepts the reverse one."""
+        a, b, c = (Player(n, f"{n}@example.com") for n in "ABC")
+        graph = NGiftGraph({a, b, c}, {Incompatibility(a, b, one_way=True)})
+        graph.assignments = {a: {b}, b: {c}, c: {a}}
+        with self.assertRaises(GiftAssignmentError):
+            graph.verify_assignments()
+        graph.assignments = {b: {a}, a: {c}, c: {b}}
+        graph.verify_assignments()
+
+    def test_forbidden_pairs(self):
+        """A reciprocal incompatibility forbids both directions, a one-way one only fst -> snd."""
+        a, b = Player("A", "a@example.com"), Player("B", "b@example.com")
+        self.assertEqual(Incompatibility(a, b).forbidden_pairs(), {(a, b), (b, a)})
+        self.assertEqual(Incompatibility(b, a), Incompatibility(a, b))
+        self.assertEqual(Incompatibility(b, a, one_way=True).forbidden_pairs(), {(b, a)})
+        self.assertNotEqual(Incompatibility(b, a, one_way=True), Incompatibility(a, b, one_way=True))
+
 if __name__ == '__main__':
     unittest.main()
