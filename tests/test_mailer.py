@@ -1,5 +1,6 @@
 import smtplib
 import unittest
+import unittest.mock
 from unittest.mock import patch
 
 from secret_santa.mailer import Contact, Mailer, MailerSettings
@@ -45,6 +46,77 @@ class TestMailer(unittest.TestCase):
     def test_send_outside_context_manager_raises(self, smtp_ssl):
         with self.assertRaises(RuntimeError):
             Mailer(SETTINGS).send_email(Contact("A", "a@example.com"), SENDER, "Subject", "Body")
+
+    def test_quit_socket_error_after_all_sent_is_swallowed(self, smtp_ssl):
+        smtp = smtp_ssl.return_value
+        smtp.quit.side_effect = ConnectionResetError()
+        with Mailer(SETTINGS) as mailer:
+            mailer.send_email(Contact("A", "a@example.com"), SENDER, "Subject", "Body")
+        smtp.close.assert_called_once()
+
+    def test_original_error_is_not_hidden_by_quit(self, smtp_ssl):
+        smtp = smtp_ssl.return_value
+        smtp.send_message.side_effect = smtplib.SMTPServerDisconnected("gone")
+        smtp.quit.side_effect = BrokenPipeError()
+        with self.assertRaises(smtplib.SMTPServerDisconnected):
+            with Mailer(SETTINGS) as mailer:
+                mailer.send_email(Contact("A", "a@example.com"), SENDER, "Subject", "Body")
+        smtp.quit.assert_not_called()
+        smtp.close.assert_called_once()
+
+    def test_reconnects_on_421_and_retries_once(self, smtp_ssl):
+        first, second = unittest.mock.MagicMock(), unittest.mock.MagicMock()
+        smtp_ssl.side_effect = [first, second]
+        first.send_message.side_effect = smtplib.SMTPSenderRefused(421, b"too many", "santa@example.com")
+        with Mailer(SETTINGS) as mailer:
+            mailer.send_email(Contact("A", "a@example.com"), SENDER, "Subject", "Body")
+        self.assertEqual(smtp_ssl.call_count, 2)
+        second.login.assert_called_once_with("login", "password")
+        second.send_message.assert_called_once()
+
+    def test_reconnects_when_server_closed_connection(self, smtp_ssl):
+        first, second = unittest.mock.MagicMock(), unittest.mock.MagicMock()
+        smtp_ssl.side_effect = [first, second]
+        first.sock = None
+        with Mailer(SETTINGS) as mailer:
+            mailer.send_email(Contact("A", "a@example.com"), SENDER, "Subject", "Body")
+        first.send_message.assert_not_called()
+        second.send_message.assert_called_once()
+
+    def test_disconnect_during_send_is_not_retried(self, smtp_ssl):
+        smtp = smtp_ssl.return_value
+        smtp.send_message.side_effect = smtplib.SMTPServerDisconnected("gone")
+        with self.assertRaises(smtplib.SMTPServerDisconnected):
+            with Mailer(SETTINGS) as mailer:
+                mailer.send_email(Contact("A", "a@example.com"), SENDER, "Subject", "Body")
+        smtp_ssl.assert_called_once()
+        smtp.send_message.assert_called_once()
+
+    def test_permanent_errors_are_not_retried(self, smtp_ssl):
+        smtp = smtp_ssl.return_value
+        for error in (smtplib.SMTPRecipientsRefused({"a@example.com": (550, b"no such user")}),
+                      smtplib.SMTPDataError(554, b"rejected"),
+                      smtplib.SMTPDataError(451, b"try again later")):
+            smtp.send_message.reset_mock()
+            smtp.send_message.side_effect = error
+            with self.assertRaises(type(error)):
+                with Mailer(SETTINGS) as mailer:
+                    mailer.send_email(Contact("A", "a@example.com"), SENDER, "Subject", "Body")
+            smtp.send_message.assert_called_once()
+        self.assertEqual(smtp_ssl.call_count, 3)  # one connection per Mailer, no reconnection
+
+    def test_second_421_is_not_retried_again(self, smtp_ssl):
+        first, second = unittest.mock.MagicMock(), unittest.mock.MagicMock()
+        smtp_ssl.side_effect = [first, second]
+        busy = smtplib.SMTPRecipientsRefused({"a@example.com": (421, b"too many")})
+        first.send_message.side_effect = busy
+        second.send_message.side_effect = busy
+        with self.assertRaises(smtplib.SMTPRecipientsRefused):
+            with Mailer(SETTINGS) as mailer:
+                mailer.send_email(Contact("A", "a@example.com"), SENDER, "Subject", "Body")
+        self.assertEqual(smtp_ssl.call_count, 2)
+        first.send_message.assert_called_once()
+        second.send_message.assert_called_once()
 
 
 if __name__ == '__main__':

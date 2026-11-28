@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import smtplib
 import ssl
 from dataclasses import dataclass, field
@@ -16,8 +18,14 @@ class Contact:
 class MailerSettings:
     server_fqdn: str
     server_port: int
-    login: str
-    password: str
+    login: str | None
+    password: str | None
+
+def _is_service_closing(e: smtplib.SMTPException) -> bool:
+    if isinstance(e, smtplib.SMTPRecipientsRefused):
+        return bool(e.recipients) and all(code == 421 for code, _ in e.recipients.values())
+    return getattr(e, "smtp_code", None) == 421
+
 
 @dataclass
 class Mailer:
@@ -30,6 +38,10 @@ class Mailer:
     _smtp: smtplib.SMTP_SSL | None = field(default=None, init=False, repr=False)
 
     def __enter__(self) -> "Mailer":
+        self._smtp = self._connect()
+        return self
+
+    def _connect(self) -> smtplib.SMTP_SSL:
         # Without an explicit context, SMTP_SSL does not verify the server certificate.
         smtp = smtplib.SMTP_SSL(self.settings.server_fqdn, self.settings.server_port,
                                 context=ssl.create_default_context())
@@ -39,14 +51,20 @@ class Mailer:
         except BaseException:
             smtp.close()
             raise
-        self._smtp = smtp
-        return self
+        return smtp
 
-    def __exit__(self, *exc_info):
+    def __exit__(self, exc_type, exc, tb):
         smtp, self._smtp = self._smtp, None
+        if smtp is None:
+            return
+        if exc_type is not None:
+            # The connection may be dead: don't let a QUIT error hide the original one.
+            smtp.close()
+            return
         try:
             smtp.quit()
-        except smtplib.SMTPException:
+        except (smtplib.SMTPException, OSError):
+            # Every email was already sent: a failed goodbye is harmless.
             smtp.close()
 
     @classmethod
@@ -64,4 +82,23 @@ class Mailer:
         if self._smtp is None:
             raise RuntimeError("Mailer is not connected: use it as a context manager")
         msg = self.__generate_msg(dst, sender, subject, body)
-        self._smtp.send_message(msg)
+        if self._smtp.sock is None:
+            # smtplib closed the connection after a 421 on the previous email. A server-side
+            # drop (e.g. idle timeout) leaves sock set: send_message then raises
+            # SMTPServerDisconnected, which is not retried (the email may have gone out).
+            self._reconnect()
+        try:
+            self._smtp.send_message(msg)
+        except (smtplib.SMTPResponseException, smtplib.SMTPRecipientsRefused) as e:
+            # 421 means the server refused this email and is closing the connection, so
+            # it was not delivered: retrying once on a new connection cannot duplicate it.
+            # Any other disconnection may happen after the server accepted the email,
+            # so it is not retried.
+            if not _is_service_closing(e):
+                raise
+            self._reconnect()
+            self._smtp.send_message(msg)
+
+    def _reconnect(self):
+        self._smtp.close()
+        self._smtp = self._connect()
